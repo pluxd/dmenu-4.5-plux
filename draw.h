@@ -33,3 +33,5 @@ void mapdc(DC *dc, Window win, unsigned int w, unsigned int h);
 void resizedc(DC *dc, unsigned int w, unsigned int h);
 int textnw(DC *dc, const char *text, size_t len);
 int textw(DC *dc, const char *text);
+int drawstring2b(Display *display, Drawable d, GC gc, int x, int y, const char *string, int length);
+int utf8toxchar2b(const char *intext, int inlen, XChar2b *outtext, int outlen);

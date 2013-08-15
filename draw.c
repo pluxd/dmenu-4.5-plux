@@ -22,6 +22,59 @@ drawrect(DC *dc, int x, int y, unsigned int w, unsigned int h, Bool fill, unsign
 		XDrawRectangle(dc->dpy, dc->canvas, dc->gc, dc->x + x, dc->y + y, w-1, h-1);
 }
 
+int
+utf8toxchar2b(const char *intext, int inlen, XChar2b *outtext, int outlen)
+{
+	int j, k;
+	for(j =0, k=0; j < inlen && k < outlen; j ++) {
+		unsigned char c = intext[j];
+		if (c < 128) {
+			outtext[k].byte1 = 0;
+			outtext[k].byte2 = c;
+			k++;
+		}
+		else if (c < 0xC0) {
+			/* we're inside a character we don't know */
+			continue;
+		}
+		else
+			switch(c & 0xF0) {
+				case 0xC0:
+				case 0xD0: /* two bytes 5+6 = 11 bits */
+					if (inlen < j + 1)
+						return k;
+					outtext[k].byte1 = (c & 0x1C) >> 2;
+					j++;
+					outtext[k].byte2 = ((c & 0x3) << 6) + (intext[j] & 0x3F);
+					k++;
+					break;
+				case 0xE0: /* three bytes 4+6+6 = 16 bits */
+					if (inlen < j + 2)
+						return k;
+					j++;
+					outtext[k].byte1 = ((c & 0xF) << 4) + ((intext[j] & 0x3C) >> 2);
+					c = intext[j];
+					j++;
+					outtext[k].byte2 = ((c & 0x3) << 6) + (intext[j] & 0x3F);
+					k++;
+					break;
+				case 0xFF:
+					/* the character uses more than 16 bits */
+					break;
+			}
+	}
+	return k;
+}
+
+int
+drawstring2b(Display *display, Drawable d, GC gc, int x, int y, const char *string, int length)
+{
+	size_t len = strlen(string);
+	XChar2b charbuf[len * sizeof(*string)];
+	size_t buflen = utf8toxchar2b(string, length, charbuf, len);
+	return XDrawString16(display, d, gc, x, y, charbuf, buflen);
+}
+
 void
 drawtext(DC *dc, const char *text, unsigned long col[ColLast]) {
 	char buf[BUFSIZ];
@@ -49,7 +102,7 @@ drawtextn(DC *dc, const char *text, size_t n, unsigned long col[ColLast]) {
 		XmbDrawString(dc->dpy, dc->canvas, dc->font.set, dc->gc, x, y, text, n);
 	else {
 		XSetFont(dc->dpy, dc->gc, dc->font.xfont->fid);
-		XDrawString(dc->dpy, dc->canvas, dc->gc, x, y, text, n);
+		drawstring2b(dc->dpy, dc->canvas, dc->gc, x, y, text, n);
 	}
 }
 
@@ -95,7 +148,7 @@ DC *
 initdc(void) {
 	DC *dc;
 
-	if(!setlocale(LC_CTYPE, "") || !XSupportsLocale())
+	if(!XSupportsLocale())
 		fputs("no locale support\n", stderr);
 	if(!(dc = calloc(1, sizeof *dc)))
 		eprintf("cannot malloc %u bytes:", sizeof *dc);
